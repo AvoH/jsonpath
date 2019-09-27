@@ -67,6 +67,9 @@ func (p *ambiguousPath) evaluate(ctx context.Context, parameter interface{}) (in
 	matchs := []interface{}{}
 	p.visitMatchs(ctx, parameter, func(keys []interface{}, match interface{}) {
 		matchs = append(matchs, match)
+		v := ctx.Value(MATCH_PATH_VALUE)
+		pv := v.(*[]interface{})
+		*pv = append(*pv, keys)
 	})
 	return matchs, nil
 }

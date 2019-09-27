@@ -17,18 +17,20 @@ import (
 	"github.com/PaesslerAG/gval"
 )
 
+const MATCH_PATH_VALUE = "match_path_value"
+
 // New returns an selector for given JSONPath
 func New(path string) (gval.Evaluable, error) {
 	return lang.NewEvaluable(path)
 }
 
 //Get executes given JSONPath on given value
-func Get(path string, value interface{}) (interface{}, error) {
+func Get(path string, value interface{}, ctx context.Context) (interface{}, error) {
 	eval, err := lang.NewEvaluable(path)
 	if err != nil {
 		return nil, err
 	}
-	return eval(context.Background(), value)
+	return eval(ctx, value)
 }
 
 var lang = gval.NewLanguage(

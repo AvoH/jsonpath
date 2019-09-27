@@ -82,6 +82,9 @@ func selectValue(c context.Context, key gval.Evaluable, r, v interface{}) (value
 		}
 
 		if r, ok := o[k]; ok {
+			v := c.Value(MATCH_PATH_VALUE)
+			pv := v.(*[]interface{})
+			*pv = append(*pv, k)
 			return r, k, nil
 		}
 		return nil, "", fmt.Errorf("unknown key %s", k)
