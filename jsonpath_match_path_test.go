@@ -27,14 +27,14 @@ func TestMatchedPath(t *testing.T)  {
 	case []interface{}:
 		pathValues, _ := result.([]interface{})
 		for _, pathValue := range pathValues {
-			pv, ok := pathValue.(pathValuePair)
+			pv, ok := pathValue.(PathValue)
 			assert.True(t, ok)
 
 			fmt.Println(pv.path)
 			fmt.Println(pv.value)
 		}
 	case interface{}:
-		pv, ok := result.(pathValuePair)
+		pv, ok := result.(*PathValue)
 		assert.True(t, ok)
 
 		fmt.Println(pv.path)

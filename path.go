@@ -11,31 +11,25 @@ type path interface {
 	withAmbiguousSelector(ambiguousSelector) path
 }
 
-// pathValuePair contains the matched key path and value
-type pathValuePair struct {
-	path []string
-	value interface{}
-}
-
 type plainPath []plainSelector
 
-type ambiguousMatcher func(key interface{}, v pathValuePair)
+type ambiguousMatcher func(key interface{}, v *PathValue)
 
 func (p plainPath) evaluate(ctx context.Context, root interface{}) (interface{}, error) {
 	// return p.evaluatePath(ctx, root, root)
-	var pv pathValuePair
+	var pv PathValue
 	pv.path = make([]string, 0)
 	pv.value = root
-	v, err := p.evaluatePath(ctx, root, pv)
-	return v, err
+	pvRes, err := p.evaluatePath(ctx, root, &pv)
+	return pvRes, err
 }
 
-func (p plainPath) evaluatePath(ctx context.Context, root interface{}, value pathValuePair) (pathValuePair, error) {
+func (p plainPath) evaluatePath(ctx context.Context, root interface{}, value *PathValue) (*PathValue, error) {
 	var err error
 	for _, sel := range p {
 		value, err = sel(ctx, root, value)
 		if err != nil {
-			return value, err	//TODO better way to return pathValuePair in error
+			return nil, err
 		}
 	}
 	return value, nil
@@ -45,7 +39,7 @@ func (p plainPath) matcher(ctx context.Context, r interface{}, match ambiguousMa
 	if len(p) == 0 {
 		return match
 	}
-	return func(k interface{}, v pathValuePair) {
+	return func(k interface{}, v *PathValue) {
 		res, err := p.evaluatePath(ctx, r, v)
 		if err == nil {
 			match(k, res)
@@ -54,10 +48,10 @@ func (p plainPath) matcher(ctx context.Context, r interface{}, match ambiguousMa
 }
 
 func (p plainPath) visitMatchs(ctx context.Context, r interface{}, visit pathMatcher) {
-	var pv pathValuePair
+	var pv PathValue
 	pv.path = make([]string, 0)
 	pv.value = r
-	res, err := p.evaluatePath(ctx, r, pv)
+	res, err := p.evaluatePath(ctx, r, &pv)
 	if err == nil {
 		visit(nil, res)
 	}
@@ -81,20 +75,20 @@ type ambiguousPath struct {
 
 func (p *ambiguousPath) evaluate(ctx context.Context, parameter interface{}) (interface{}, error) {
 	matchs := []interface{}{}
-	p.visitMatchs(ctx, parameter, func(keys []interface{}, match pathValuePair) {
-		matchs = append(matchs, match)
+	p.visitMatchs(ctx, parameter, func(keys []interface{}, match *PathValue) {
+		matchs = append(matchs, *match)
 	})
 	return matchs, nil
 }
 
 func (p *ambiguousPath) visitMatchs(ctx context.Context, r interface{}, visit pathMatcher) {
-	p.parent.visitMatchs(ctx, r, func(keys []interface{}, v pathValuePair) {
+	p.parent.visitMatchs(ctx, r, func(keys []interface{}, v *PathValue) {
 		p.branch(ctx, r, v, p.ending.matcher(ctx, r, visit.matcher(keys)))
 	})
 }
 
 func (p *ambiguousPath) branchMatcher(ctx context.Context, r interface{}, m ambiguousMatcher) ambiguousMatcher {
-	return func(k interface{}, v pathValuePair) {
+	return func(k interface{}, v *PathValue) {
 		p.branch(ctx, r, v, m)
 	}
 }
@@ -110,10 +104,10 @@ func (p *ambiguousPath) withAmbiguousSelector(selector ambiguousSelector) path {
 	}
 }
 
-type pathMatcher func(keys []interface{}, match pathValuePair)
+type pathMatcher func(keys []interface{}, match *PathValue)
 
 func (m pathMatcher) matcher(keys []interface{}) ambiguousMatcher {
-	return func(key interface{}, match pathValuePair) {
+	return func(key interface{}, match *PathValue) {
 		m(append(keys, key), match)
 	}
 }

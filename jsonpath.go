@@ -17,6 +17,12 @@ import (
 	"github.com/PaesslerAG/gval"
 )
 
+// Result contains the matched key path and value
+type PathValue struct {
+	path []string
+	value interface{}
+}
+
 // New returns an selector for given JSONPath
 func New(path string) (gval.Evaluable, error) {
 	return lang.NewEvaluable(path)

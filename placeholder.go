@@ -94,7 +94,7 @@ func (kv keyValuePair) visitElements(c context.Context, v interface{}, visit key
 }
 
 func (kv keyValueMatcher) visitElements(c context.Context, v interface{}, visit keyValueVisitor) (err error) {
-	kv.matcher(c, v, func(keys []interface{}, match pathValuePair) {
+	kv.matcher(c, v, func(keys []interface{}, match *PathValue) {
 		key, er := kv.key.EvalString(context.WithValue(c, placeholdersContextKey{}, keys), v)
 		if er != nil {
 			err = er
