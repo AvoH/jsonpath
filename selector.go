@@ -19,8 +19,8 @@ type ambiguousSelector func(c context.Context, r interface{}, v *PathValue, matc
 func currentElementSelector() plainSelector {
 	return func(c context.Context, r interface{}, v *PathValue) (*PathValue, error) {
 		var pv PathValue
-		pv.path = make([]string, 0)
-		pv.value = c.Value(currentElement{})
+		pv.Path = make([]string, 0)
+		pv.Value = c.Value(currentElement{})
 		return &pv, nil
 	}
 }
@@ -35,13 +35,13 @@ func currentContext(c context.Context, v interface{}) context.Context {
 func directSelector(key gval.Evaluable) plainSelector {
 	return func(c context.Context, r interface{}, v *PathValue) (*PathValue, error) {
 		var pv PathValue
-		pv.path = append(v.path[:0:0], v.path...)
-		e, matchedPath, err := selectValue(c, key, r, v.value)
+		pv.Path = append(v.Path[:0:0], v.Path...)
+		e, matchedPath, err := selectValue(c, key, r, v.Value)
 		if err != nil {
 			return v, err	// TODO: better way to return pathValuePair
 		}
-		pv.path = append(pv.path, matchedPath)
-		pv.value = e
+		pv.Path = append(pv.Path, matchedPath)
+		pv.Value = e
 		return &pv, nil
 	}
 }
@@ -50,9 +50,9 @@ func directSelector(key gval.Evaluable) plainSelector {
 func starSelector() ambiguousSelector {
 	return func(c context.Context, r interface{}, v *PathValue, match ambiguousMatcher) {
 		var pv PathValue
-		pv.path = append(v.path[:0:0], v.path...)
+		pv.Path = append(v.Path[:0:0], v.Path...)
 		visitAll(v, func(key string, pval *PathValue) {
-			pv.path = append(pv.path, key)
+			pv.Path = append(pv.Path, key)
 			match(key, pval) })
 	}
 }
@@ -65,13 +65,13 @@ func multiSelector(keys []gval.Evaluable) ambiguousSelector {
 	return func(c context.Context, r interface{}, v *PathValue, match ambiguousMatcher) {
 		for _, k := range keys {
 			var pv PathValue
-			pv.path = append(v.path[:0:0], v.path...)
-			e, wildcard, err := selectValue(c, k, r, v.value)
+			pv.Path = append(v.Path[:0:0], v.Path...)
+			e, wildcard, err := selectValue(c, k, r, v.Value)
 			if err != nil {
 				continue
 			}
-			pv.path = append(pv.path, wildcard)
-			pv.value = e
+			pv.Path = append(pv.Path, wildcard)
+			pv.Value = e
 			match(wildcard, &pv)
 		}
 	}
@@ -120,24 +120,29 @@ func mapper(c context.Context, r interface{}, v *PathValue, match ambiguousMatch
 }
 
 func visitAll(pv *PathValue, visit func(key string, v *PathValue)) {
-	switch v := pv.value.(type) {
+	switch t := pv.Value.(type) {
 	case []interface{}:
-		for i, e := range v {
+		values := pv.Value.([]interface{})
+		for i, e := range values {
 			k := "[" + strconv.Itoa(i) + "]"
 			var npv PathValue
-			npv.path = append(pv.path[:0:0], pv.path...)
-			npv.path = append(npv.path, k)
-			npv.value = e
+			npv.Path = append(pv.Path[:0:0], pv.Path...)
+			npv.Path = append(npv.Path, k)
+			npv.Value = e
 			visit(k, &npv)
 		}
 	case map[string]interface{}:
-		for k, e := range v {
+		valueMap := pv.Value.(map[string]interface{})
+		for k, e := range valueMap{
 			var npv PathValue
-			npv.path = append(pv.path[:0:0], pv.path...)
-			npv.path = append(npv.path, k)
-			npv.value = e
+			npv.Path = append(pv.Path[:0:0], pv.Path...)
+			npv.Path = append(npv.Path, k)
+			npv.Value = e
 			visit(k, &npv)
 		}
+	default:
+		fmt.Errorf("Invalid type %T in visitAll", t)
+		return
 	}
 }
 
@@ -146,9 +151,9 @@ func filterSelector(filter gval.Evaluable) ambiguousSelector {
 	return func(c context.Context, r interface{}, v *PathValue, match ambiguousMatcher) {
 		visitAll(v, func(wildcard string, v *PathValue) {
 			var pv PathValue
-			pv.path = append(v.path[:0:0], v.path...)
-			pv.value = v.value
-			condition, err := filter.EvalBool(currentContext(c, pv.value), r)
+			pv.Path = append(v.Path[:0:0], v.Path...)
+			pv.Value = v.Value
+			condition, err := filter.EvalBool(currentContext(c, pv.Value), r)
 			if err != nil {
 				return
 			}
@@ -163,15 +168,15 @@ func filterSelector(filter gval.Evaluable) ambiguousSelector {
 func rangeSelector(min, max, step gval.Evaluable) ambiguousSelector {
 	return func(c context.Context, r interface{}, v *PathValue, match ambiguousMatcher) {
 		var pv PathValue
-		pv.path = append(v.path[:0:0], v.path...)
-		pv.value = v.value
+		pv.Path = append(v.Path[:0:0], v.Path...)
+		pv.Value = v.Value
 
-		cs, ok := v.value.([]interface{})
+		cs, ok := v.Value.([]interface{})
 		if !ok {
 			return
 		}
 
-		c = currentContext(c, v.value)
+		c = currentContext(c, v.Value)
 
 		min, err := min.EvalInt(c, r)
 		if err != nil {
@@ -201,15 +206,15 @@ func rangeSelector(min, max, step gval.Evaluable) ambiguousSelector {
 		if step > 0 {
 			for i := min; i < max; i += step {
 				var pv PathValue
-				pv.path = append(v.path[:0:0], v.path...)
-				pv.value = cs[i]
+				pv.Path = append(v.Path[:0:0], v.Path...)
+				pv.Value = cs[i]
 				match(strconv.Itoa(i), &pv)
 			}
 		} else {
 			for i := max - 1; i >= min; i += step {
 				var pv PathValue
-				pv.path = append(v.path[:0:0], v.path...)
-				pv.value = cs[i]
+				pv.Path = append(v.Path[:0:0], v.Path...)
+				pv.Value = cs[i]
 				match(strconv.Itoa(i), &pv)
 			}
 		}
@@ -232,7 +237,7 @@ func negmax(n, max int) int {
 // ()
 func newScript(script gval.Evaluable) plainSelector {
 	return func(c context.Context, r interface{}, v *PathValue) (*PathValue, error) {
-		val, err := script(currentContext(c, v.value), r)
+		val, err := script(currentContext(c, v.Value), r)
 		pv, ok := val.(PathValue)
 		if (!ok) {
 			return nil, errors.New("script return non path value pair")	//TODO, refine error message

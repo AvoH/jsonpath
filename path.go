@@ -18,8 +18,8 @@ type ambiguousMatcher func(key interface{}, v *PathValue)
 func (p plainPath) evaluate(ctx context.Context, root interface{}) (interface{}, error) {
 	// return p.evaluatePath(ctx, root, root)
 	var pv PathValue
-	pv.path = make([]string, 0)
-	pv.value = root
+	pv.Path = make([]string, 0)
+	pv.Value = root
 	pvRes, err := p.evaluatePath(ctx, root, &pv)
 	return pvRes, err
 }
@@ -49,8 +49,8 @@ func (p plainPath) matcher(ctx context.Context, r interface{}, match ambiguousMa
 
 func (p plainPath) visitMatchs(ctx context.Context, r interface{}, visit pathMatcher) {
 	var pv PathValue
-	pv.path = make([]string, 0)
-	pv.value = r
+	pv.Path = make([]string, 0)
+	pv.Value = r
 	res, err := p.evaluatePath(ctx, r, &pv)
 	if err == nil {
 		visit(nil, res)

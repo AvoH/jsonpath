@@ -18,7 +18,7 @@ func setup(file string) map[string]interface{} {
 func TestMatchedPath(t *testing.T)  {
 	data := setup("petstore.json")
 
-	result, err := Get("$.paths.*.*.parameters.*.name", data)
+	result, err := Get("$.paths.*.*.parameters[*]", data)
 	if (err != nil) {
 		fmt.Println(err.Error())
 	}
@@ -30,15 +30,15 @@ func TestMatchedPath(t *testing.T)  {
 			pv, ok := pathValue.(PathValue)
 			assert.True(t, ok)
 
-			fmt.Println(pv.path)
-			fmt.Println(pv.value)
+			fmt.Println(pv.Path)
+			fmt.Println(pv.Value)
 		}
 	case interface{}:
 		pv, ok := result.(*PathValue)
 		assert.True(t, ok)
 
-		fmt.Println(pv.path)
-		fmt.Println(pv.value)
+		fmt.Println(pv.Path)
+		fmt.Println(pv.Value)
 	default:
 		fmt.Errorf("Unknown type %T of result", res)
 	}

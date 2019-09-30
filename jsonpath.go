@@ -19,8 +19,8 @@ import (
 
 // Result contains the matched key path and value
 type PathValue struct {
-	path []string
-	value interface{}
+	Path []string
+	Value interface{}
 }
 
 // New returns an selector for given JSONPath
