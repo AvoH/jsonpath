@@ -2,6 +2,7 @@ package jsonpath
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 
@@ -9,15 +10,18 @@ import (
 )
 
 //plainSelector evaluate exactly one result
-type plainSelector func(c context.Context, r, v interface{}) (interface{}, error)
+type plainSelector func(c context.Context, r interface{}, v pathValuePair) (pathValuePair, error)
 
 //ambiguousSelector evaluate wildcard
-type ambiguousSelector func(c context.Context, r, v interface{}, match ambiguousMatcher)
+type ambiguousSelector func(c context.Context, r interface{}, v pathValuePair, match ambiguousMatcher)
 
 //@
 func currentElementSelector() plainSelector {
-	return func(c context.Context, r, v interface{}) (interface{}, error) {
-		return c.Value(currentElement{}), nil
+	return func(c context.Context, r interface{}, v pathValuePair) (pathValuePair, error) {
+		var pv pathValuePair
+		pv.path = make([]string, 0)
+		pv.value = c.Value(currentElement{})
+		return pv, nil
 	}
 }
 
@@ -29,21 +33,27 @@ func currentContext(c context.Context, v interface{}) context.Context {
 
 //.x, [x]
 func directSelector(key gval.Evaluable) plainSelector {
-	return func(c context.Context, r, v interface{}) (interface{}, error) {
-
-		e, _, err := selectValue(c, key, r, v)
+	return func(c context.Context, r interface{}, v pathValuePair) (pathValuePair, error) {
+		var pv pathValuePair
+		pv.path = append(v.path[:0:0], v.path...)
+		e, matchedPath, err := selectValue(c, key, r, v.value)
 		if err != nil {
-			return nil, err
+			return v, err	// TODO: better way to return pathValuePair
 		}
-
-		return e, nil
+		pv.path = append(pv.path, matchedPath)
+		pv.value = e
+		return pv, nil
 	}
 }
 
 // * / [*]
 func starSelector() ambiguousSelector {
-	return func(c context.Context, r, v interface{}, match ambiguousMatcher) {
-		visitAll(v, func(key string, val interface{}) { match(key, val) })
+	return func(c context.Context, r interface{}, v pathValuePair, match ambiguousMatcher) {
+		var pv pathValuePair
+		pv.path = append(v.path[:0:0], v.path...)
+		visitAll(v, func(key string, pval pathValuePair) {
+			pv.path = append(pv.path, key)
+			match(key, pval) })
 	}
 }
 
@@ -52,13 +62,17 @@ func multiSelector(keys []gval.Evaluable) ambiguousSelector {
 	if len(keys) == 0 {
 		return starSelector()
 	}
-	return func(c context.Context, r, v interface{}, match ambiguousMatcher) {
+	return func(c context.Context, r interface{}, v pathValuePair, match ambiguousMatcher) {
 		for _, k := range keys {
-			e, wildcard, err := selectValue(c, k, r, v)
+			var pv pathValuePair
+			pv.path = append(v.path[:0:0], v.path...)
+			e, wildcard, err := selectValue(c, k, r, v.value)
 			if err != nil {
 				continue
 			}
-			match(wildcard, e)
+			pv.path = append(pv.path, wildcard)
+			pv.value = e
+			match(wildcard, pv)
 		}
 	}
 }
@@ -82,9 +96,6 @@ func selectValue(c context.Context, key gval.Evaluable, r, v interface{}) (value
 		}
 
 		if r, ok := o[k]; ok {
-			v := c.Value(MATCH_PATH_VALUE)
-			pv := v.(*[]interface{})
-			*pv = append(*pv, k)
 			return r, k, nil
 		}
 		return nil, "", fmt.Errorf("unknown key %s", k)
@@ -99,40 +110,50 @@ func mapperSelector() ambiguousSelector {
 	return mapper
 }
 
-func mapper(c context.Context, r, v interface{}, match ambiguousMatcher) {
+func mapper(c context.Context, r interface{}, v pathValuePair, match ambiguousMatcher) {
 	match([]interface{}{}, v)
-	visitAll(v, func(wildcard string, v interface{}) {
-		mapper(c, r, v, func(key interface{}, v interface{}) {
+	visitAll(v, func(wildcard string, v pathValuePair) {
+		mapper(c, r, v, func(key interface{}, v pathValuePair) {
 			match(append([]interface{}{wildcard}, key.([]interface{})...), v)
 		})
 	})
 }
 
-func visitAll(v interface{}, visit func(key string, v interface{})) {
-	switch v := v.(type) {
+func visitAll(pv pathValuePair, visit func(key string, v pathValuePair)) {
+	switch v := pv.value.(type) {
 	case []interface{}:
 		for i, e := range v {
-			k := strconv.Itoa(i)
-			visit(k, e)
+			k := "[" + strconv.Itoa(i) + "]"
+			var npv pathValuePair
+			npv.path = append(pv.path[:0:0], pv.path...)
+			npv.path = append(npv.path, k)
+			npv.value = e
+			visit(k, npv)
 		}
 	case map[string]interface{}:
 		for k, e := range v {
-			visit(k, e)
+			var npv pathValuePair
+			npv.path = append(pv.path[:0:0], pv.path...)
+			npv.path = append(npv.path, k)
+			npv.value = e
+			visit(k, npv)
 		}
 	}
-
 }
 
 //[? ]
 func filterSelector(filter gval.Evaluable) ambiguousSelector {
-	return func(c context.Context, r, v interface{}, match ambiguousMatcher) {
-		visitAll(v, func(wildcard string, v interface{}) {
-			condition, err := filter.EvalBool(currentContext(c, v), r)
+	return func(c context.Context, r interface{}, v pathValuePair, match ambiguousMatcher) {
+		visitAll(v, func(wildcard string, v pathValuePair) {
+			var pv pathValuePair
+			pv.path = append(v.path[:0:0], v.path...)
+			pv.value = v.value
+			condition, err := filter.EvalBool(currentContext(c, pv.value), r)
 			if err != nil {
 				return
 			}
 			if condition {
-				match(wildcard, v)
+				match(wildcard, pv)
 			}
 		})
 	}
@@ -140,13 +161,17 @@ func filterSelector(filter gval.Evaluable) ambiguousSelector {
 
 //[::]
 func rangeSelector(min, max, step gval.Evaluable) ambiguousSelector {
-	return func(c context.Context, r, v interface{}, match ambiguousMatcher) {
-		cs, ok := v.([]interface{})
+	return func(c context.Context, r interface{}, v pathValuePair, match ambiguousMatcher) {
+		var pv pathValuePair
+		pv.path = append(v.path[:0:0], v.path...)
+		pv.value = v.value
+
+		cs, ok := v.value.([]interface{})
 		if !ok {
 			return
 		}
 
-		c = currentContext(c, v)
+		c = currentContext(c, v.value)
 
 		min, err := min.EvalInt(c, r)
 		if err != nil {
@@ -175,11 +200,17 @@ func rangeSelector(min, max, step gval.Evaluable) ambiguousSelector {
 
 		if step > 0 {
 			for i := min; i < max; i += step {
-				match(strconv.Itoa(i), cs[i])
+				var pv pathValuePair
+				pv.path = append(v.path[:0:0], v.path...)
+				pv.value = cs[i]
+				match(strconv.Itoa(i), pv)
 			}
 		} else {
 			for i := max - 1; i >= min; i += step {
-				match(strconv.Itoa(i), cs[i])
+				var pv pathValuePair
+				pv.path = append(v.path[:0:0], v.path...)
+				pv.value = cs[i]
+				match(strconv.Itoa(i), pv)
 			}
 		}
 
@@ -200,7 +231,12 @@ func negmax(n, max int) int {
 
 // ()
 func newScript(script gval.Evaluable) plainSelector {
-	return func(c context.Context, r, v interface{}) (interface{}, error) {
-		return script(currentContext(c, v), r)
+	return func(c context.Context, r interface{}, v pathValuePair) (pathValuePair, error) {
+		val, err := script(currentContext(c, v.value), r)
+		pv, ok := val.(pathValuePair)
+		if (!ok) {
+			return v, errors.New("script return non path value pair")	//TODO, refine error message
+		}
+		return pv, err
 	}
 }

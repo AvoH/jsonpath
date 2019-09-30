@@ -1,9 +1,9 @@
 package jsonpath
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/stretchr/testify/assert"
 	"io/ioutil"
 	"testing"
 )
@@ -18,12 +18,28 @@ func setup(file string) map[string]interface{} {
 func TestMatchedPath(t *testing.T)  {
 	data := setup("petstore.json")
 
-	pv := make([]interface{}, 0)
-	ctx := context.WithValue(context.TODO(), MATCH_PATH_VALUE, &pv)
-
-	_, err := Get("$.paths.*", data, ctx)
+	result, err := Get("$.paths.*.*.parameters.*.name", data)
 	if (err != nil) {
 		fmt.Println(err.Error())
 	}
-	fmt.Println(pv)
+
+	switch res := result.(type) {
+	case []interface{}:
+		pathValues, _ := result.([]interface{})
+		for _, pathValue := range pathValues {
+			pv, ok := pathValue.(pathValuePair)
+			assert.True(t, ok)
+
+			fmt.Println(pv.path)
+			fmt.Println(pv.value)
+		}
+	case interface{}:
+		pv, ok := result.(pathValuePair)
+		assert.True(t, ok)
+
+		fmt.Println(pv.path)
+		fmt.Println(pv.value)
+	default:
+		fmt.Errorf("Unknown type %T of result", res)
+	}
 }

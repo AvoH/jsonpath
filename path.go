@@ -1,6 +1,8 @@
 package jsonpath
 
-import "context"
+import (
+	"context"
+)
 
 type path interface {
 	evaluate(c context.Context, parameter interface{}) (interface{}, error)
@@ -9,20 +11,31 @@ type path interface {
 	withAmbiguousSelector(ambiguousSelector) path
 }
 
-type plainPath []plainSelector
-
-type ambiguousMatcher func(key, v interface{})
-
-func (p plainPath) evaluate(ctx context.Context, root interface{}) (interface{}, error) {
-	return p.evaluatePath(ctx, root, root)
+// pathValuePair contains the matched key path and value
+type pathValuePair struct {
+	path []string
+	value interface{}
 }
 
-func (p plainPath) evaluatePath(ctx context.Context, root, value interface{}) (interface{}, error) {
+type plainPath []plainSelector
+
+type ambiguousMatcher func(key interface{}, v pathValuePair)
+
+func (p plainPath) evaluate(ctx context.Context, root interface{}) (interface{}, error) {
+	// return p.evaluatePath(ctx, root, root)
+	var pv pathValuePair
+	pv.path = make([]string, 0)
+	pv.value = root
+	v, err := p.evaluatePath(ctx, root, pv)
+	return v, err
+}
+
+func (p plainPath) evaluatePath(ctx context.Context, root interface{}, value pathValuePair) (pathValuePair, error) {
 	var err error
 	for _, sel := range p {
 		value, err = sel(ctx, root, value)
 		if err != nil {
-			return nil, err
+			return value, err	//TODO better way to return pathValuePair in error
 		}
 	}
 	return value, nil
@@ -32,7 +45,7 @@ func (p plainPath) matcher(ctx context.Context, r interface{}, match ambiguousMa
 	if len(p) == 0 {
 		return match
 	}
-	return func(k, v interface{}) {
+	return func(k interface{}, v pathValuePair) {
 		res, err := p.evaluatePath(ctx, r, v)
 		if err == nil {
 			match(k, res)
@@ -41,7 +54,10 @@ func (p plainPath) matcher(ctx context.Context, r interface{}, match ambiguousMa
 }
 
 func (p plainPath) visitMatchs(ctx context.Context, r interface{}, visit pathMatcher) {
-	res, err := p.evaluatePath(ctx, r, r)
+	var pv pathValuePair
+	pv.path = make([]string, 0)
+	pv.value = r
+	res, err := p.evaluatePath(ctx, r, pv)
 	if err == nil {
 		visit(nil, res)
 	}
@@ -65,23 +81,20 @@ type ambiguousPath struct {
 
 func (p *ambiguousPath) evaluate(ctx context.Context, parameter interface{}) (interface{}, error) {
 	matchs := []interface{}{}
-	p.visitMatchs(ctx, parameter, func(keys []interface{}, match interface{}) {
+	p.visitMatchs(ctx, parameter, func(keys []interface{}, match pathValuePair) {
 		matchs = append(matchs, match)
-		v := ctx.Value(MATCH_PATH_VALUE)
-		pv := v.(*[]interface{})
-		*pv = append(*pv, keys)
 	})
 	return matchs, nil
 }
 
 func (p *ambiguousPath) visitMatchs(ctx context.Context, r interface{}, visit pathMatcher) {
-	p.parent.visitMatchs(ctx, r, func(keys []interface{}, v interface{}) {
+	p.parent.visitMatchs(ctx, r, func(keys []interface{}, v pathValuePair) {
 		p.branch(ctx, r, v, p.ending.matcher(ctx, r, visit.matcher(keys)))
 	})
 }
 
 func (p *ambiguousPath) branchMatcher(ctx context.Context, r interface{}, m ambiguousMatcher) ambiguousMatcher {
-	return func(k, v interface{}) {
+	return func(k interface{}, v pathValuePair) {
 		p.branch(ctx, r, v, m)
 	}
 }
@@ -97,10 +110,10 @@ func (p *ambiguousPath) withAmbiguousSelector(selector ambiguousSelector) path {
 	}
 }
 
-type pathMatcher func(keys []interface{}, match interface{})
+type pathMatcher func(keys []interface{}, match pathValuePair)
 
 func (m pathMatcher) matcher(keys []interface{}) ambiguousMatcher {
-	return func(key, match interface{}) {
+	return func(key interface{}, match pathValuePair) {
 		m(append(keys, key), match)
 	}
 }
